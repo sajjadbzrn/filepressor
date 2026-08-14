@@ -29,6 +29,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -36,5 +37,18 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://ghcr-mirror.liara.ir/sajjadbzrn/filepressor/releases/latest/download/latest.json",
+        "https://github.com/sajjadbzrn/filepressor/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY2NEFGRDc1N0E4Nzc2MDcKUldRSGRvZDZkZjFLWmxNK2hEeW1TVlpKVkNaR1pBanZFVWp1ampsdDhUUmUxQ0tUZ2NXVExPTnAK",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

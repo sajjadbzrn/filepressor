@@ -1,0 +1,36 @@
+name: Feature Request
+description: Suggest a new feature or improvement for FilePressor
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or motivation
+      description: What problem would this feature solve? Link any related issues.
+      placeholder: I often need to split large archives, but there's no way to do that today.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: Describe the feature and how you'd expect it to work.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any alternative approaches or workarounds you've thought about?
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Compression / formats
+        - Extraction
+        - UI / theming
+        - Auto-update
+        - Performance
+        - Other

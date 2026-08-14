@@ -115,6 +115,32 @@ bun run dev        # starts the Vite dev server
 4. **Themes** — use the sun/moon button in the title bar to switch between
    light and dark mode.
 
+## 🔔 Automatic Updates
+
+FilePressor can update itself in place — no uninstall/reinstall required.
+
+- On launch it **silently checks** for a new version (toggleable in *About →
+  Updates*).
+- When an update is found, a banner appears in the app. Click **Update now** and
+  FilePressor downloads, verifies (ed25519 signature), installs, and relaunches.
+- You can also check manually from *About → Updates → Check for updates*.
+
+Updates are fetched from a CDN endpoint and **verified with a public key** baked
+into the app, so they can't be tampered with in transit. The default endpoint
+uses the GitHub Releases `latest.json`, with a **mirror** configured first so
+users behind restrictive networks pull updates faster:
+
+```
+https://ghcr-mirror.liara.ir/sajjadbzrn/filepressor/releases/latest/download/latest.json
+https://github.com/sajjadbzrn/filepressor/releases/latest/download/latest.json
+```
+
+> To publish updates, maintainers push a `v*` tag. The
+> [Release workflow](.github/workflows/release.yml) builds signed bundles for
+> Windows and Linux (Ubuntu) and generates `latest.json`. The signing private key
+> is provided via the `TAURI_SIGNING_PRIVATE_KEY` repository secret — contributors
+> don't need it for local development.
+
 ## 🧱 Project Structure
 
 ```

@@ -10,9 +10,11 @@ import Background3D from "./components/Background3D.vue";
 import TitleBar from "./components/TitleBar.vue";
 import { activeTab, requestShellOpen } from "./lib/shell";
 import type { ShellMode } from "./lib/shell";
+import { useUpdater } from "./composables/useUpdater";
 
 const theme = ref<"light" | "dark">("light");
 const aboutOpen = ref(false);
+const updater = useUpdater();
 
 function loadTheme(): "light" | "dark" {
   const stored = localStorage.getItem("fp-theme");
@@ -58,11 +60,33 @@ onMounted(async () => {
   } catch {
     // ignore
   }
+
+  // Notify the user when a new version is available (auto-check on launch).
+  if (updater.autoCheck.value) {
+    void updater.checkForUpdates();
+  }
 });
 </script>
 
 <template>
   <Background3D />
+  <Transition name="ub">
+    <div v-if="updater.updateAvailable.value && !updater.downloading.value" class="update-banner" role="alert">
+      <span class="ub-dot" aria-hidden="true"></span>
+      <span class="ub-text">
+        New version <strong>{{ updater.update.value?.version }}</strong> is available.
+      </span>
+      <button class="ub-btn" type="button" @click="updater.installUpdate()">Update now</button>
+      <button class="ub-later" type="button" title="Remind me later" @click="updater.dismiss()">Later</button>
+    </div>
+    <div v-else-if="updater.downloading.value" class="update-banner updating" role="status">
+      <span class="ub-text">
+        Updating to <strong>{{ updater.update.value?.version }}</strong>…
+        <template v-if="updater.contentLength.value">{{ Math.round((updater.downloaded.value / updater.contentLength.value) * 100) }}%</template>
+      </span>
+      <div class="ub-track"><div class="ub-fill" :style="{ width: updater.contentLength.value ? ((updater.downloaded.value / updater.contentLength.value) * 100) + '%' : '40%' }"></div></div>
+    </div>
+  </Transition>
   <TitleBar
     :theme="theme"
     @toggle-theme="toggleTheme"
@@ -177,5 +201,215 @@ footer {
   font-size: 11.5px;
   color: var(--text-muted, #8a8090);
   opacity: 0.85;
+}
+
+/* ---------- Update banner ---------- */
+.update-banner {
+  position: fixed;
+  top: 54px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(440px, calc(100vw - 32px));
+  padding: 10px 12px 10px 14px;
+  border-radius: 14px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--brand, #c04d6f);
+  box-shadow: 0 14px 34px -16px rgba(192, 77, 111, 0.5);
+  font-size: 12.5px;
+  color: var(--text, #211b20);
+}
+
+.update-banner.updating {
+  border-color: var(--border, #ece8ee);
+}
+
+.ub-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--brand, #c04d6f);
+  flex-shrink: 0;
+  animation: ubPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes ubPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.7); }
+}
+
+.ub-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ub-btn {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 9px;
+  padding: 6px 12px;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: #fff;
+  background: var(--brand, #c04d6f);
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+.ub-btn:hover {
+  filter: brightness(1.07);
+}
+
+.ub-later {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted, #8a8090);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ub-later:hover {
+  color: var(--text, #211b20);
+}
+
+.ub-track {
+  flex: 1;
+  min-width: 120px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--seg-bg, #f1edf2);
+  overflow: hidden;
+}
+
+.ub-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--brand, #c04d6f);
+  transition: width 0.25s ease;
+}
+
+.ub-enter-active,
+.ub-leave-active {
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.ub-enter-from,
+.ub-leave-to {
+  opacity: 0;
+  transform: translate(-50%, -10px);
+}
+
+/* ---------- Update banner ---------- */
+.update-banner {
+  position: fixed;
+  top: 54px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(440px, calc(100vw - 32px));
+  padding: 10px 12px 10px 14px;
+  border-radius: 14px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--brand, #c04d6f);
+  box-shadow: 0 14px 34px -16px rgba(192, 77, 111, 0.5);
+  font-size: 12.5px;
+  color: var(--text, #211b20);
+}
+
+.update-banner.updating {
+  border-color: var(--border, #ece8ee);
+}
+
+.ub-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--brand, #c04d6f);
+  flex-shrink: 0;
+  animation: ubPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes ubPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.7); }
+}
+
+.ub-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ub-btn {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 9px;
+  padding: 6px 12px;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: #fff;
+  background: var(--brand, #c04d6f);
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+.ub-btn:hover {
+  filter: brightness(1.07);
+}
+
+.ub-later {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted, #8a8090);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ub-later:hover {
+  color: var(--text, #211b20);
+}
+
+.ub-track {
+  flex: 1;
+  min-width: 120px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--seg-bg, #f1edf2);
+  overflow: hidden;
+}
+
+.ub-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--brand, #c04d6f);
+  transition: width 0.25s ease;
+}
+
+.ub-enter-active,
+.ub-leave-active {
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.ub-enter-from,
+.ub-leave-to {
+  opacity: 0;
+  transform: translate(-50%, -10px);
 }
 </style>

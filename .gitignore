@@ -12,6 +12,14 @@ dist
 dist-ssr
 *.local
 
+# Tauri signing keys — NEVER commit the private key
+.tauri/
+*.key
+*.pem
+
+# Rust build artifacts
+src-tauri/target/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

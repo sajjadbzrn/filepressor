@@ -2,9 +2,13 @@
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { useUpdater } from "../composables/useUpdater";
 
 const props = defineProps<{ open: boolean }>();
 const emit = defineEmits<{ close: [] }>();
+
+const updater = useUpdater();
+const hasChecked = ref(false);
 
 const GITHUB_URL = "https://github.com/sajjadbzrn";
 const GITHUB_AVATAR = "https://avatars.githubusercontent.com/u/292075678?v=4";
@@ -19,6 +23,17 @@ function onKeydown(e: KeyboardEvent): void {
   if (e.key === "Escape" && props.open) emit("close");
 }
 
+async function checkForUpdates(): Promise<void> {
+  await updater.checkForUpdates();
+  hasChecked.value = true;
+}
+
+function formatDate(d: Date | string | null | undefined): string {
+  if (!d) return "";
+  const date = typeof d === "string" ? new Date(d) : d;
+  return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
 watch(
   () => props.open,
   (open) => {
@@ -27,6 +42,10 @@ watch(
       getVersion()
         .then((v) => (version.value = v))
         .catch(() => {});
+      // Auto-check in the background the first time the modal is opened.
+      if (!updater.updateAvailable.value && !updater.checking.value && !hasChecked.value) {
+        void checkForUpdates();
+      }
     }
   },
 );
@@ -80,6 +99,64 @@ async function openGithub(): Promise<void> {
             A fast, lightweight desktop compressor. Shrink files, re-compress existing
             archives, and open almost any archive format — entirely on your machine.
           </p>
+
+          <div class="divider"></div>
+
+          <!-- Updates -->
+          <section class="updates">
+            <div class="upd-head">
+              <span class="upd-title">Updates</span>
+              <label class="upd-auto">
+                <input
+                  type="checkbox"
+                  :checked="updater.autoCheck.value"
+                  @change="updater.setAutoCheck(($event.target as HTMLInputElement).checked)"
+                />
+                <span>Check automatically on launch</span>
+              </label>
+            </div>
+
+            <div class="upd-row">
+              <span class="upd-version">v{{ version }}</span>
+              <button
+                class="upd-check"
+                type="button"
+                :disabled="updater.checking.value || updater.downloading.value"
+                @click="checkForUpdates"
+              >
+                {{ updater.checking.value ? "Checking…" : "Check for updates" }}
+              </button>
+            </div>
+
+            <p v-if="updater.error.value" class="upd-msg err">{{ updater.error.value }}</p>
+            <template v-else-if="updater.updateAvailable.value && updater.update.value">
+              <p class="upd-msg">
+                <strong>v{{ updater.update.value.version }}</strong> is available
+                <span v-if="updater.update.value.date"> · {{ formatDate(updater.update.value.date) }}</span>
+              </p>
+              <p v-if="updater.update.value.body" class="upd-notes">{{ updater.update.value.body }}</p>
+              <button
+                class="upd-update"
+                type="button"
+                :disabled="updater.downloading.value"
+                @click="updater.installUpdate"
+              >
+                {{ updater.downloading.value ? "Updating…" : "Download & install update" }}
+              </button>
+              <div v-if="updater.downloading.value" class="upd-track">
+                <div
+                  class="upd-fill"
+                  :style="{ width: updater.contentLength.value ? ((updater.downloaded.value / updater.contentLength.value) * 100) + '%' : '30%' }"
+                ></div>
+              </div>
+            </template>
+            <p
+              v-else-if="hasChecked && !updater.checking.value"
+              class="upd-msg ok"
+            >
+              You're on the latest version.
+            </p>
+          </section>
 
           <div class="divider"></div>
 
@@ -332,6 +409,144 @@ async function openGithub(): Promise<void> {
   font-size: 11px;
   color: var(--text-muted, #8a8090);
   opacity: 0.85;
+}
+
+/* ---------- Updates ---------- */
+.updates {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+}
+
+.upd-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.upd-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text, #211b20);
+}
+
+.upd-auto {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  color: var(--text-muted, #8a8090);
+  cursor: pointer;
+}
+
+.upd-auto input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--brand, #c04d6f);
+  cursor: pointer;
+}
+
+.upd-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.upd-version {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--text-muted, #8a8090);
+}
+
+.upd-check {
+  border: 1px solid var(--border, #ece8ee);
+  background: var(--surface, #fff);
+  color: var(--text, #211b20);
+  border-radius: 10px;
+  padding: 7px 14px;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.upd-check:hover:not(:disabled) {
+  border-color: var(--brand, #c04d6f);
+  color: var(--brand, #c04d6f);
+}
+
+.upd-check:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.upd-msg {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted, #8a8090);
+}
+
+.upd-msg.ok {
+  color: #2e8b57;
+}
+
+.upd-msg.err {
+  color: #c0392b;
+  word-break: break-word;
+}
+
+.upd-notes {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  color: var(--text-muted, #8a8090);
+  max-height: 96px;
+  overflow-y: auto;
+}
+
+.upd-update {
+  align-self: flex-start;
+  border: none;
+  border-radius: 10px;
+  padding: 8px 16px;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: #fff;
+  background: linear-gradient(135deg, var(--brand, #c04d6f), #d98ba3);
+  cursor: pointer;
+  box-shadow: 0 6px 16px -6px var(--brand-glow);
+  transition: filter 0.15s ease;
+}
+
+.upd-update:hover:not(:disabled) {
+  filter: brightness(1.07);
+}
+
+.upd-update:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.upd-track {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--seg-bg, #f1edf2);
+  overflow: hidden;
+}
+
+.upd-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--brand, #c04d6f);
+  transition: width 0.25s ease;
 }
 
 /* transitions */

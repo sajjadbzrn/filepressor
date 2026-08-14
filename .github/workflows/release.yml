@@ -1,0 +1,98 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Release (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev
+
+      - name: Install frontend dependencies
+        run: bun install
+
+      # Builds signed bundles (NSIS + MSI on Windows, AppImage + .deb on Linux),
+      # generates latest.json, and publishes a GitHub Release with the assets.
+      - name: Build & publish
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "FilePressor ${{ github.ref_name }}"
+          releaseBody: |
+            ## 🎉 FilePressor v0.1.0 — First Release
+
+            **A blazing-fast desktop file compressor built with Tauri 2, Vue 3 & Rust.**
+
+            ### ✨ What's New
+            - **Compress anything** — files, folders, or directory trees into ZIP, 7Z (LZMA2), TAR.GZ, TAR.ZST, and more
+            - **Re-compress archives** — drop an existing archive and FilePressor rebuilds it in your chosen format
+            - **Extract anything** — opens ZIP, 7Z, RAR, TAR, GZ, BZ2, XZ, ZST and more (matched by extension *or* magic bytes)
+            - **Media transcoding** — re-encode video to H.265 (HEVC) and images to AVIF for maximum compression
+            - **Live progress** with per-file granularity, pause/resume, and cancel at any time
+            - **Beautiful UI** with light & dark themes and custom title bar
+            - **Automatic updates** — self-updating with ed25519 signature verification
+
+            ### 📦 Downloads
+            | Platform | Installer |
+            |----------|-----------|
+            | Windows  | `FilePressor_*_x64-setup.exe` (NSIS) / `.msi` |
+            | Ubuntu   | `FilePressor_*_amd64.AppImage` / `.deb` |
+
+            ### 🔒 Security
+            All update artifacts are signed with ed25519 keys. The public key is baked into the app — updates cannot be tampered with in transit.
+
+            ### 🛠 Build from Source
+            ```bash
+            git clone https://github.com/sajjadbzrn/filepressor.git
+            cd filepressor
+            bun install
+            bun run tauri build
+            ```
+
+            **Requirements:** Rust, Node.js 20+, Bun
+
+            ---
+
+            Full changelog and documentation: [README](https://github.com/sajjadbzrn/filepressor/blob/main/README.md)
+          releaseDraft: false
+          prerelease: false
+          includeUpdater: true
