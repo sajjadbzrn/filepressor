@@ -12,8 +12,26 @@ use std::io::{self, BufRead};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Instant;
+
+/// On Windows, child processes (ffmpeg / ffprobe) spawn their own console
+/// window unless we explicitly suppress it. That window is the "black CLI box"
+/// that flashes open and closed every time we probe or transcode media.
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+fn hide_console_window(cmd: &mut Command) {
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    cmd.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(windows))]
+fn hide_console_window(_cmd: &mut Command) {}
+
+/// Memoized ffmpeg discovery so we only shell out to probe it once per run.
+static FFMPEG_CACHE: OnceLock<Option<PathBuf>> = OnceLock::new();
 
 use walkdir::WalkDir;
 
@@ -56,28 +74,31 @@ pub fn ffmpeg_available() -> bool {
 }
 
 /// Find ffmpeg: a bundled copy next to the executable, else `PATH`.
+/// The result is memoized so the `-version` probe runs at most once per launch.
 fn ffmpeg_path() -> Option<PathBuf> {
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            for name in ["ffmpeg", "ffmpeg.exe"] {
-                let p = dir.join(name);
-                if p.exists() {
-                    return Some(p);
+    FFMPEG_CACHE
+        .get_or_init(|| {
+            if let Ok(exe) = std::env::current_exe() {
+                if let Some(dir) = exe.parent() {
+                    for name in ["ffmpeg", "ffmpeg.exe"] {
+                        let p = dir.join(name);
+                        if p.exists() {
+                            return Some(p);
+                        }
+                    }
                 }
             }
-        }
-    }
-    let name = if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" };
-    if Command::new(name)
-        .arg("-version")
-        .stdout(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-    {
-        return Some(PathBuf::from(name));
-    }
-    None
+            let name = if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" };
+            let mut cmd = Command::new(name);
+            cmd.arg("-version").stdout(std::process::Stdio::null());
+            hide_console_window(&mut cmd);
+            if cmd.status().map(|s| s.success()).unwrap_or(false) {
+                Some(PathBuf::from(name))
+            } else {
+                None
+            }
+        })
+        .clone()
 }
 
 /// Get the duration of a media file in milliseconds via ffprobe.
@@ -109,16 +130,17 @@ fn probe_duration(ffmpeg: &Path, input: &Path) -> u64 {
         PathBuf::from(name)
     };
 
-    let output = Command::new(&ffprobe)
-        .args([
-            "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1",
-        ])
-        .arg(input)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .output();
+    let mut cmd = Command::new(&ffprobe);
+    cmd.args([
+        "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+    ])
+    .arg(input)
+    .stdout(std::process::Stdio::piped())
+    .stderr(std::process::Stdio::null());
+    hide_console_window(&mut cmd);
+    let output = cmd.output();
 
     match output {
         Ok(out) if out.status.success() => {
@@ -325,10 +347,12 @@ fn run_transcode(
         ext_of(output).trim_start_matches('.')
     ));
     let args = build_args(staged_input, &part, format, level);
-    let mut child = Command::new(ffmpeg)
-        .args(&args)
+    let mut cmd = Command::new(ffmpeg);
+    cmd.args(&args)
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    hide_console_window(&mut cmd);
+    let mut child = cmd
         .spawn()
         .map_err(|e| format!("Failed to launch ffmpeg: {e}"))?;
 

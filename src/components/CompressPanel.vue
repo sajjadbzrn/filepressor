@@ -341,13 +341,6 @@ function savedPercent(): string | null {
   margin-top: 4px;
 }
 
-.empty-browse {
-  display: flex;
-  justify-content: center;
-  gap: 10px;
-  margin-top: 4px;
-}
-
 .hint-row {
   display: flex;
   align-items: center;

@@ -4,13 +4,42 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
 
+# Never run two releases for the same ref at once. This also serializes the
+# matrix builds so they can't race to create the GitHub release (which would
+# otherwise produce two releases — one for the tag push and one from the second
+# runner trying to publish in parallel).
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  # Pre-create the GitHub release ONCE so the per-OS matrix jobs only upload
+  # assets to it instead of each trying to create their own release.
+  create-release:
+    if: startsWith(github.ref, 'refs/tags/')
+    name: Create release
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create.outputs.id }}
+    steps:
+      - name: Create GitHub release
+        id: create
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "FilePressor ${{ github.ref_name }}"
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+
   release:
-    name: Release (${{ matrix.platform }})
+    name: Build & publish (${{ matrix.platform }})
+    needs: create-release
     strategy:
       fail-fast: false
       matrix:
@@ -47,7 +76,8 @@ jobs:
         run: bun install
 
       # Builds signed bundles (NSIS + MSI on Windows, AppImage + .deb on Linux),
-      # generates latest.json, and publishes a GitHub Release with the assets.
+      # generates latest.json, and uploads the artifacts to the release created
+      # above (releaseId) — so we always end up with exactly ONE release.
       - name: Build & publish
         uses: tauri-apps/tauri-action@v0
         env:
@@ -55,10 +85,11 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
+          releaseId: ${{ needs.create-release.outputs.release_id }}
           tagName: ${{ github.ref_name }}
           releaseName: "FilePressor ${{ github.ref_name }}"
           releaseBody: |
-            ## 🎉 FilePressor v0.1.0 — First Release
+            ## 🎉 FilePressor ${{ github.ref_name }}
 
             **A blazing-fast desktop file compressor built with Tauri 2, Vue 3 & Rust.**
 
@@ -80,19 +111,7 @@ jobs:
             ### 🔒 Security
             All update artifacts are signed with ed25519 keys. The public key is baked into the app — updates cannot be tampered with in transit.
 
-            ### 🛠 Build from Source
-            ```bash
-            git clone https://github.com/sajjadbzrn/filepressor.git
-            cd filepressor
-            bun install
-            bun run tauri build
-            ```
-
-            **Requirements:** Rust, Node.js 20+, Bun
-
-            ---
-
-            Full changelog and documentation: [README](https://github.com/sajjadbzrn/filepressor/blob/main/README.md)
+            **Full changelog:** see the [commit history](https://github.com/sajjadbzrn/filepressor/commits/${{ github.ref_name }}).
           releaseDraft: false
           prerelease: false
           includeUpdater: true
