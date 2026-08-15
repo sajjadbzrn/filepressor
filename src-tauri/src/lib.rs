@@ -306,12 +306,12 @@ pub fn run() {
         }))
         .manage(tasks::AppState::default())
         .manage(PendingOpen(Mutex::new(pending_buf)))
-        .setup(|app| {
+        .setup(|_app| {
             // Set the title-bar icon on Windows from the embedded PNG.
             #[cfg(target_os = "windows")]
             {
                 use tauri::Manager;
-                if let Some(window) = app.get_webview_window("main") {
+                if let Some(window) = _app.get_webview_window("main") {
                     let icon =
                         tauri::image::Image::from_bytes(include_bytes!("../icons/128x128.png"))?;
                     window.set_icon(icon)?;
