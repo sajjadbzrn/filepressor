@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watchEffect } from "vue";
+import { onMounted, ref, watch, watchEffect } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -15,6 +15,29 @@ import { useUpdater } from "./composables/useUpdater";
 const theme = ref<"light" | "dark">("light");
 const aboutOpen = ref(false);
 const updater = useUpdater();
+
+// Transient "toast" shown when a new version is detected (e.g. on launch),
+// so the user is notified even if they never open About.
+const toast = ref(false);
+let toastTimer: ReturnType<typeof setTimeout> | undefined;
+
+watch(
+  () => updater.updateAvailable.value,
+  (available) => {
+    if (available && updater.update.value && !updater.downloading.value) {
+      toast.value = true;
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => (toast.value = false), 8000);
+    } else {
+      toast.value = false;
+    }
+  },
+);
+
+function dismissToast(): void {
+  toast.value = false;
+  if (toastTimer) clearTimeout(toastTimer);
+}
 
 function loadTheme(): "light" | "dark" {
   const stored = localStorage.getItem("fp-theme");
@@ -92,6 +115,24 @@ onMounted(async () => {
     @toggle-theme="toggleTheme"
     @open-about="aboutOpen = true"
   />
+
+  <Transition name="toast">
+    <div
+      v-if="toast && updater.update.value"
+      class="toast"
+      role="status"
+      aria-live="polite"
+    >
+      <span class="toast-ico" aria-hidden="true">&#8593;</span>
+      <div class="toast-body">
+        <strong>Update available</strong>
+        <span>Version {{ updater.update.value.version }} is ready to install</span>
+      </div>
+      <button class="toast-btn" type="button" @click="updater.installUpdate()">Update</button>
+      <button class="toast-x" type="button" title="Dismiss" @click="dismissToast">&#10005;</button>
+    </div>
+  </Transition>
+
   <div class="app">
 
     <nav class="tabs" role="tablist" aria-label="Mode">
@@ -306,6 +347,104 @@ footer {
 .ub-leave-to {
   opacity: 0;
   transform: translate(-50%, -10px);
+}
+
+/* ---------- Toast ---------- */
+.toast {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 95;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(320px, calc(100vw - 36px));
+  padding: 12px 12px 12px 14px;
+  border-radius: 14px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--brand, #c04d6f);
+  box-shadow: 0 16px 40px -18px rgba(192, 77, 111, 0.55);
+  font-size: 12.5px;
+  color: var(--text, #211b20);
+}
+
+.toast-ico {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--brand-soft, #f8e9ee);
+  color: var(--brand, #c04d6f);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.toast-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1.3;
+}
+
+.toast-body strong {
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.toast-body span {
+  font-size: 11px;
+  color: var(--text-muted, #8a8090);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toast-btn {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 9px;
+  padding: 6px 12px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  color: #fff;
+  background: var(--brand, #c04d6f);
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+.toast-btn:hover {
+  filter: brightness(1.07);
+}
+
+.toast-x {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted, #8a8090);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.toast-x:hover {
+  color: var(--text, #211b20);
+}
+
+.toast-enter-active,
+.toast-leave-active {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateY(12px);
 }
 
 </style>

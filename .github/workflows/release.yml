@@ -21,20 +21,31 @@ jobs:
   # Pre-create the GitHub release ONCE so the per-OS matrix jobs only upload
   # assets to it instead of each trying to create their own release.
   create-release:
-    if: startsWith(github.ref, 'refs/tags/')
     name: Create release
     runs-on: ubuntu-latest
     outputs:
       release_id: ${{ steps.create.outputs.id }}
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
+      - name: Resolve tag name
+        id: tag
+        shell: bash
+        run: |
+          # Use the pushed tag, or (on manual dispatch) the short commit sha.
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=ci-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Create GitHub release
         id: create
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: "FilePressor ${{ github.ref_name }}"
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "FilePressor ${{ steps.tag.outputs.tag }}"
           draft: false
-          prerelease: false
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
           generate_release_notes: true
 
   release:
@@ -83,13 +94,21 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
+          # Pin bundles per OS. On Linux we deliberately skip `rpm`, which needs
+          # `rpmbuild` (not present on ubuntu-latest) and would otherwise fail
+          # the whole Linux build.
+          args: >-
+            ${{
+              matrix.platform == 'windows-latest'
+              && '--bundles nsis,msi'
+              || '--bundles deb,appimage'
+            }}
           releaseId: ${{ needs.create-release.outputs.release_id }}
-          tagName: ${{ github.ref_name }}
-          releaseName: "FilePressor ${{ github.ref_name }}"
+          tagName: ${{ needs.create-release.outputs.tag }}
+          releaseName: "FilePressor ${{ needs.create-release.outputs.tag }}"
           releaseBody: |
-            ## 🎉 FilePressor ${{ github.ref_name }}
+            ## 🎉 FilePressor ${{ needs.create-release.outputs.tag }}
 
             **A blazing-fast desktop file compressor built with Tauri 2, Vue 3 & Rust.**
 
@@ -111,7 +130,21 @@ jobs:
             ### 🔒 Security
             All update artifacts are signed with ed25519 keys. The public key is baked into the app — updates cannot be tampered with in transit.
 
-            **Full changelog:** see the [commit history](https://github.com/sajjadbzrn/filepressor/commits/${{ github.ref_name }}).
+            **Full changelog:** see the [commit history](https://github.com/sajjadbzrn/filepressor/commits/${{ needs.create-release.outputs.tag }}).
           releaseDraft: false
           prerelease: false
           includeUpdater: true
+
+      # If the build fails, upload the Rust/Cargo logs so the failure is
+      # diagnosable from the Actions run instead of silently producing a
+      # release with only the auto-generated source archives.
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-${{ matrix.platform }}
+          path: |
+            src-tauri/target/release/bundle/**/*.log
+            ~/.cargo/registry/**/*.log
+          if-no-files-found: ignore
+          retention-days: 7
